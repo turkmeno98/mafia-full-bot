@@ -4,51 +4,60 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <style>
-    body { margin: 0; font-family: -apple-system, sans-serif; background: var(--tg-theme-bg-color); color: var(--tg-theme-text-color); }
-    #players { display: flex; flex-wrap: wrap; }
-    .player { padding: 10px; margin: 5px; background: var(--tg-theme-button-color); border-radius: 10px; }
-    button { width: 100%; margin: 10px 0; padding: 15px; background: var(--tg-theme-button-color); color: var(--tg-theme-button-text-color); border: none; border-radius: 10px; font-size: 16px; }
-    #phase { text-align: center; font-size: 24px; margin: 20px; }
-    canvas { width: 100%; height: 200px; background: #f0f0f0; border-radius: 10px; } /* Анимация фаз */
+    body { margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--tg-theme-bg-color); color: var(--tg-theme-text-color); }
+    #phase { font-size: 24px; text-align: center; margin: 20px 0; }
+    #players { display: flex; flex-wrap: wrap; gap: 10px; }
+    .player { padding: 10px 15px; background: var(--tg-theme-button-color); color: var(--tg-theme-button-text-color); border-radius: 20px; font-weight: bold; }
+    .dead { opacity: 0.5; }
+    button { width: 100%; padding: 15px; margin: 10px 0; background: var(--tg-theme-button-color); color: var(--tg-theme-button-text-color); border: none; border-radius: 10px; font-size: 18px; }
+    #role { font-size: 20px; text-align: center; color: gold; }
+    #chatHint { background: #f0f0f0; padding: 10px; border-radius: 10px; margin: 10px 0; text-align: center; }
   </style>
 </head>
 <body>
-  <div id="phase">Лобби: <span id="playerCount">0</span>/12</div>
+  <div id="phase">Лобби: <span id="count">0</span>/12 игроков</div>
+  <div id="role"></div>
   <div id="players"></div>
-  <canvas id="animation"></canvas> <!-- Анимации: ночь/день -->
-  <button id="startBtn" onclick="startGame()">Начать игру</button>
-  <button id="actionBtn" style="display:none;" onclick="sendAction()">Действие</button>
+  <div id="chatHint">💬 Обсуждения в основном чате группы</div>
+  <button id="startBtn" onclick="startGame()">🚀 Начать игру (4+)</button>
+  <button id="actionBtn" style="display:none;" onclick="sendAction()">⚡ Действие (ночь)</button>
+  <button onclick="Telegram.WebApp.close()">← В чат группы</button>
 
   <script>
     Telegram.WebApp.ready();
     Telegram.WebApp.expand();
+    Telegram.WebApp.MainButton.setText('В чат').show().onClick(() => Telegram.WebApp.close());
+    
     const user = Telegram.WebApp.initDataUnsafe.user;
-    const roomId = Telegram.WebApp.initDataUnsafe.chat?.id || 'solo'; // Для групп/ЛС
-    const socket = io('https://your-backend.onrender.com'); // Твой backend URL
+    const roomId = Telegram.WebApp.initDataUnsafe.chat?.id?.toString() || user.id.toString();
+    const socket = io();  // Авто к серверу (тот же домен)
 
-    socket.emit('joinRoom', { roomId, userId: user.id, username: user.username });
+    socket.emit('joinRoom', { roomId, userId: user.id, username: user.username || 'Anon' });
 
-    socket.on('updatePlayers', (players) => {
-      document.getElementById('playerCount').textContent = players.length;
-      document.getElementById('players').innerHTML = players.map(p => `<div class="player">${p.username} ${p.alive ? '🟢' : '🔴'}</div>`).join('');
+    socket.on('updatePlayers', (data) => {
+      document.getElementById('count').textContent = data.count;
+      document.getElementById('players').innerHTML = data.players.map(p => 
+        `<span class="player">${p.username}</span>`
+      ).join('');
     });
 
     socket.on('gameStart', (data) => {
       document.getElementById('startBtn').style.display = 'none';
       document.getElementById('actionBtn').style.display = 'block';
-      document.getElementById('phase').textContent = `Ночь ${data.day}`;
-      animatePhase(); // Анимация луны/солнца
+      document.getElementById('role').textContent = `Твоя роль: ${data.role || 'Житель'} 🤫`;
+      document.getElementById('phase').textContent = '🌙 Ночь';
     });
 
-    function startGame() { socket.emit('startGame', roomId); }
-    function sendAction() { socket.emit('action', { roomId, action: 'kill' }); } // Твоя роль определяет
+    socket.on('nextPhase', (data) => {
+      document.getElementById('phase').textContent = data.phase === 'night' ? '🌙 Ночь' : '☀️ День';
+    });
 
-    function animatePhase() {
-      const canvas = document.getElementById('animation');
-      const ctx = canvas.getContext('2d');
-      // Простая анимация: солнце/луна
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.beginPath(); ctx.arc(100, 100, 50, 0, 2*Math.PI); ctx.fillStyle = '#FFD700'; ctx.fill(); // Солнце
+    function startGame() {
+      socket.emit('startGame', roomId);
+      Telegram.WebApp.HapticFeedback.impactOccurred('light');
+    }
+    function sendAction() {
+      socket.emit('action', { roomId, action: 'mafia_kill' });  // Уточни роль позже
     }
   </script>
 </body>
